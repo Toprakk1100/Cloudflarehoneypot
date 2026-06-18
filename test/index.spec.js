@@ -1,25 +1,53 @@
-import {
-	env,
-	createExecutionContext,
-	waitOnExecutionContext,
-	SELF,
-} from "cloudflare:test";
-import { describe, it, expect } from "vitest";
-import worker from "../src";
+export default {
+  async fetch(request, env) {
+    const cf = request.cf || {};
+    const url = new URL(request.url);
 
-describe("Hello World worker", () => {
-	it("responds with Hello World! (unit style)", async () => {
-		const request = new Request("http://example.com");
-		// Create an empty context to pass to `worker.fetch()`.
-		const ctx = createExecutionContext();
-		const response = await worker.fetch(request, env, ctx);
-		// Wait for all `Promise`s passed to `ctx.waitUntil()` to settle before running test assertions
-		await waitOnExecutionContext(ctx);
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
+    // Read body if present
+    let body = "";
+    try {
+      body = await request.text();
+    } catch {}
 
-	it("responds with Hello World! (integration style)", async () => {
-		const response = await SELF.fetch("http://example.com");
-		expect(await response.text()).toMatchInlineSnapshot(`"Hello World!"`);
-	});
-});
+    // Secret log viewer
+    if (url.pathname === "/logs") {
+      const key = url.searchParams.get("key");
+      if (key !== env.VIEWER_KEY) {
+        return Response.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      const { results } = await env.DB.prepare(
+        "SELECT * FROM hits ORDER BY timestamp DESC LIMIT 100"
+      ).all();
+      return Response.json(results);
+    }
+
+    // Log the hit to D1
+    await env.DB.prepare(`
+      INSERT INTO hits (timestamp, ip, asn, country, user_agent, method, path, headers, body, cf_threat_score, cf_bot_score)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      new Date().toISOString(),
+      cf.ip || request.headers.get("cf-connecting-ip") || "unknown",
+      cf.asn || null,
+      cf.country || null,
+      request.headers.get("user-agent") || null,
+      request.method,
+      url.pathname,
+      JSON.stringify(Object.fromEntries(request.headers)),
+      body,
+      cf.threatScore || null,
+      cf.botManagement?.score || null,
+    ).run();
+
+    // Decoy responses
+    if (url.pathname === "/api/v1/login") {
+      return Response.json({ error: "Invalid credentials" }, { status: 401 });
+    } else if (url.pathname === "/admin") {
+      return Response.json({ error: "Forbidden" }, { status: 403 });
+    } else if (url.pathname === "/health") {
+      return Response.json({ status: "ok" });
+    } else {
+      return Response.json({ error: "Not found" }, { status: 404 });
+    }
+  }
+};

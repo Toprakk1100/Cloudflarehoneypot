@@ -7,9 +7,16 @@
 	"name": "honeypot",
 	"main": "src/index.js",
 	"compatibility_date": "2026-06-18",
-	"observability": {
-		"enabled": true
-	},
+"observability": {
+    "enabled": true
+},
+"d1_databases": [
+  {
+    "binding": "DB",
+    "database_name": "honeypot-logs",
+    "database_id": "4634f346-07f2-472c-8705-6ea16400111e"
+  }
+],
 	"upload_source_maps": true,
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -42,4 +49,6 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
 	 */
 	// "services": [  {   "binding": "MY_SERVICE",   "service": "my-service"  } ]
+
+	
 }
